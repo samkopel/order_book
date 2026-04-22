@@ -1,0 +1,10 @@
+{
+  "name": "order-books",
+  "version": "0.1.0",
+  "dependencies": [
+    "benchmark",
+    "cpp-httplib",
+    "gtest",
+    "nlohmann-json"
+  ]
+}
