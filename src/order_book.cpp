@@ -13,13 +13,12 @@ bool OrderBook::cancel(const OrderId id)
     const auto map_it = orders_by_id.find(id);
     if (map_it == orders_by_id.end()) return false;
 
-    const OrderIterator order_it = map_it->second;
+    OrderIterator& order_it = map_it->second;
     const Side side  = order_it->side;  
     const Price price = order_it->price;
 
     PriceLevel& price_level = getPriceLevel(side, price);
-    price_level.total_quantity -= order_it->remaining_quantity;
-    eraseOrder(price_level.orders, order_it);
+    eraseOrder(price_level, order_it);
 
     if (price_level.isEmpty())
     {
@@ -82,48 +81,56 @@ PriceLevel& OrderBook::getPriceLevel(std::map<Price, PriceLevel, T>& map, const 
 template<typename T>
 TradeAccumulator OrderBook::trade(std::map<Price, PriceLevel, T>& map, const Order& order)
 {
-    TradeAccumulator trade_summary = TradeAccumulator(order.remaining_quantity);
-    while (!map.empty() && trade_summary.remaining_quantity() > 0)
+    TradeAccumulator trade_accumulator = TradeAccumulator(order.quantity);
+    while (!map.empty() && trade_accumulator.remaining_quantity() > 0)
     {
-        auto& [best_level_price, best_level] = *map.begin();
+        auto& [price, level] = *map.begin();
 
-        if (!best_level.isMatch(order.price)) break;
+        if (!level.isMatch(order.price)) break;
         
-        auto& orders = best_level.orders;
-        Quantity level_trade_quantity = 0;
-        Quantity quantity_to_trade = trade_summary.remaining_quantity();
+        Quantity remaining_quantity = trade_accumulator.remaining_quantity();
+        Quantity traded_quantity = tradeLevelQuantity(level, remaining_quantity);
+        trade_accumulator.addTrade(Trade(invert(level.side), level.price, remaining_quantity - traded_quantity));
 
-        if (quantity_to_trade >= best_level.total_quantity)
-        {
-            for (auto it = orders.begin(); it != orders.end(); it = eraseOrder(orders, it));
-            level_trade_quantity = best_level.total_quantity;
-        }
-        else
-        {
-            while (quantity_to_trade > 0)
-            {
-                auto order_it = best_level.orders.begin();
-                Quantity trade_quantity = order_it->tradeQuantity(quantity_to_trade);
-                if (order_it->isFilled()) eraseOrder(orders, order_it);
-                level_trade_quantity += trade_quantity;
-                quantity_to_trade -= trade_quantity;
-            }
-        }
-
-        trade_summary.addTrade(Trade(invert(best_level.side), best_level.price, level_trade_quantity));
-
-        if (best_level.isEmpty())
-            map.erase(best_level_price);
-        else
-            best_level.total_quantity -= level_trade_quantity;
+        if (level.isEmpty())
+            map.erase(price);
     }
-    return trade_summary;
+    return trade_accumulator;
 }
 
-OrderIterator OrderBook::eraseOrder(std::list<Order>& orders, OrderIterator it)
+OrderIterator OrderBook::eraseOrder(PriceLevel& price_level, OrderIterator& it)
 {
     OrderId id = it->id;
-    auto new_it = orders.erase(it);
+    auto new_it = price_level.removeOrder(it);
     orders_by_id.erase(id);
     return new_it;
+}
+
+Quantity OrderBook::tradeLevelQuantity(PriceLevel& price_level, Quantity quantity_to_trade)
+{
+    if (quantity_to_trade >= price_level.total_quantity)
+    {
+        auto& orders = price_level.orders; 
+        for (auto it = orders.begin(); it != orders.end(); it = eraseOrder(price_level, it))
+        {
+            quantity_to_trade -= it->quantity;
+        }
+    }
+    else
+    {
+        while (quantity_to_trade > 0)
+        {
+            auto order_it = price_level.orders.begin();
+            if (quantity_to_trade >= order_it->quantity)                                                      
+            {                                                                                                 
+                quantity_to_trade -= order_it->quantity;                                                      
+                eraseOrder(price_level, order_it);                                                            
+            }                                                                                                 
+            else                                                                                              
+            {                                                                                          
+                quantity_to_trade -= price_level.tradeQuantity(quantity_to_trade, order_it);
+            }   
+        }
+    }
+    return quantity_to_trade;
 }

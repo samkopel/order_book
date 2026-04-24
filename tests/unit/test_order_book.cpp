@@ -26,7 +26,7 @@ TEST(Order, TradeQuantityFull) {
 TEST(Order, TradeQuantityPartial) {
     Order o = makeOrder(1, 100, 10, Side::BID);
     EXPECT_EQ(o.tradeQuantity(3), 3u);
-    EXPECT_EQ(o.remaining_quantity, 7u);
+    EXPECT_EQ(o.quantity, 7u);
 }
 
 TEST(Order, TradeQuantityExceedsRemaining) {

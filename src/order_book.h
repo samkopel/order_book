@@ -20,32 +20,29 @@ inline Side invert(Side s)
 struct Order {
     OrderId id;
     Price price;
-    Quantity remaining_quantity;
+    Quantity quantity;
     Side side;
     //TODO: add timestamp
 
     Order(OrderId id, Price price, Quantity remaining_quantity, Side side):
-        id(id), price(price), remaining_quantity(remaining_quantity), side(side) {}
-
-    Order(const Order& old_order, Quantity unfilled_quantity):
-        id(old_order.id), price(old_order.price), remaining_quantity(unfilled_quantity), side(old_order.side) {}
+        id(id), price(price), quantity(remaining_quantity), side(side) {}
 
     bool isFilled() const
     {
-        return remaining_quantity == 0;
+        return quantity == 0;
     }
 
     Quantity tradeQuantity(const Quantity incoming_quantity)
     {
-        if (incoming_quantity >= remaining_quantity)
+        if (incoming_quantity >= quantity)
         {
-            Quantity old_quantity = remaining_quantity;
-            remaining_quantity = 0;
-            return old_quantity;
+            Quantity traded = quantity;
+            quantity = 0;
+            return traded;
         }
         else
         {
-            remaining_quantity -= incoming_quantity;
+            quantity -= incoming_quantity;
             return incoming_quantity;
         }
     }
@@ -96,13 +93,21 @@ struct PriceLevel {
 
     OrderIterator addOrder(const Order& order)
     {
-        total_quantity += order.remaining_quantity;
+        total_quantity += order.quantity;
         return orders.insert(orders.end(), order);
     }
 
-    void removeOrder(const OrderIterator it) {
-        total_quantity -= it->remaining_quantity;
-        orders.erase(it);
+    OrderIterator removeOrder(const OrderIterator it)
+    {
+        total_quantity -= it->quantity;
+        return orders.erase(it);
+    }
+
+    Quantity tradeQuantity(Quantity incoming_quantity, OrderIterator& it)
+    {
+        Quantity traded = it->tradeQuantity(incoming_quantity);
+        total_quantity -= traded;
+        return traded;
     }
 
     bool isMatch(const Price incoming_price) const
@@ -140,7 +145,8 @@ private:
     template<typename T> PriceLevel& getPriceLevel(std::map<Price, PriceLevel, T>& map, const Price price, const Side side);
     template<typename T> PriceLevel* getBestLevel(std::map<Price, PriceLevel, T>& map);
     template<typename T> TradeAccumulator trade(std::map<Price, PriceLevel, T>& map, const Order& order); //TODO: heap allocated on every match, pass in pre-allocated output param
-    OrderIterator eraseOrder(std::list<Order>& orders, OrderIterator it);
+    OrderIterator eraseOrder(PriceLevel& price_level, OrderIterator& it);
+    Quantity tradeLevelQuantity(PriceLevel& price_level, Quantity quantity);
     BidMap bid_map;
     AskMap ask_map;
     OrdersById orders_by_id;
