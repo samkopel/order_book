@@ -19,7 +19,7 @@ MatchResult limitOrder(OrderBook& order_book, const Order& order)
     } else
     {
         order_book.add(order);
-        return MatchResult::open(order.remaining_quantity);
+        return MatchResult::open(order.quantity);
     }
 };
 
