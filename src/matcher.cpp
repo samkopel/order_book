@@ -4,10 +4,10 @@
 
 LimitOrderResult limitOrder(OrderBook& order_book, const Order& order)
 {
-    auto best_level = order.side == Side::BID ? order_book.getBestAskLevel() : order_book.getBestBidLevel();
-    if (best_level && best_level->isMatch(order.price))
+    const PriceLevel* best_level = order_book.getBestCounterpartyLevel(order.side);
+    if (best_level && order.isMatch(best_level->price))
     {
-        TradeAccumulator trade_acc = order_book.tradeQuantity(order);
+        TradeAccumulator trade_acc = order_book.tradeLimitOrder(order);
         auto remaining_quantity = trade_acc.remaining_quantity();
         if (remaining_quantity > 0)
         {
@@ -20,25 +20,21 @@ LimitOrderResult limitOrder(OrderBook& order_book, const Order& order)
     } else
     {
         order_book.add(order);
-        return OpenResult(order.remaining_quantity);
+        return OpenResult(order.quantity);
     }
-};
+}
 
-MarketOrderResult marketOrder(OrderBook& order_book, const OrderId id, const Side side, const Quantity quantity)
+MarketOrderResult marketOrder(OrderBook& order_book, Side side, Quantity quantity)
 {
-    auto best_level = side == Side::BID ? order_book.getBestAskLevel() : order_book.getBestBidLevel();
+    const PriceLevel* best_level = order_book.getBestCounterpartyLevel(side);
     if (best_level)
     {
-        Order order = Order(id, best_level->price, quantity, side);
-        TradeAccumulator trade_acc = order_book.tradeQuantity(order);   
+        TradeAccumulator trade_acc = order_book.tradeMarketOrder(side, quantity);
         auto remaining_quantity = trade_acc.remaining_quantity();
         if (remaining_quantity > 0)
-        {
-            auto remaining_order = Order(order.id, order.price, remaining_quantity, order.side);
             return PartiallyFilled(trade_acc.total_executed, remaining_quantity, std::move(trade_acc.trades));
-        } else {
+        else
             return Filled(trade_acc.total_executed, std::move(trade_acc.trades));
-        }
     } else
     {
         return NoLiquidityResult(quantity);

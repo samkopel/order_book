@@ -12,7 +12,7 @@ using Timestamp = std::uint64_t;
 
 enum class Side { BID = 0, ASK = 1 };
 
-inline Side invert(Side s) 
+inline Side invert(Side s)
 {
     return s == Side::BID ? Side::ASK : Side::BID;
 }
@@ -20,31 +20,36 @@ inline Side invert(Side s)
 struct Order {
     OrderId id;
     Price price;
-    Quantity remaining_quantity;
+    Quantity quantity;
     Side side;
 
-    Order(OrderId id, Price price, Quantity remaining_quantity, Side side):
-        id(id), price(price), remaining_quantity(remaining_quantity), side(side) {}
+    Order(OrderId id, Price price, Quantity quantity, Side side):
+        id(id), price(price), quantity(quantity), side(side) {}
 
-    Order(const Order& old_order, Quantity unfilled_quantity):
-        id(old_order.id), price(old_order.price), remaining_quantity(unfilled_quantity), side(old_order.side) {}
+    bool isMatch(const Price level_price) const
+    {
+        if (side == Side::ASK)
+            return level_price >= price;
+        else
+            return price >= level_price;
+    }
 
     bool isFilled() const
     {
-        return remaining_quantity == 0;
+        return quantity == 0;
     }
 
     Quantity tradeQuantity(const Quantity incoming_quantity)
     {
-        if (incoming_quantity >= remaining_quantity)
+        if (incoming_quantity >= quantity)
         {
-            Quantity old_quantity = remaining_quantity;
-            remaining_quantity = 0;
-            return old_quantity;
+            Quantity traded = quantity;
+            quantity = 0;
+            return traded;
         }
         else
         {
-            remaining_quantity -= incoming_quantity;
+            quantity -= incoming_quantity;
             return incoming_quantity;
         }
     }
@@ -59,7 +64,6 @@ struct Trade {
 
     Trade(const Side side, const Price price, const Quantity quantity):
         side(side), price(price), quantity(quantity) {}
-
 };
 
 struct TradeAccumulator
@@ -88,58 +92,52 @@ struct PriceLevel {
     PriceLevel(const Side side, const Price price):
         price(price), total_quantity(), orders(), side(side) {}
 
-    bool isEmpty() const
-    {
-        return orders.empty();
-    }
+    bool isEmpty() const { return orders.empty(); }
 
     OrderIterator addOrder(const Order& order)
     {
-        total_quantity += order.remaining_quantity;
+        total_quantity += order.quantity;
         return orders.insert(orders.end(), order);
     }
 
-    void removeOrder(const OrderIterator it) {
-        total_quantity -= it->remaining_quantity;
-        orders.erase(it);
-    }
-
-    bool isMatch(const Price incoming_price) const
+    OrderIterator removeOrder(const OrderIterator it)
     {
-        if (side == Side::BID)
-        {
-            return price >= incoming_price; 
-        }
-        else
-        {
-            return incoming_price >= price;
-        }
+        total_quantity -= it->quantity;
+        return orders.erase(it);
     }
 
+    Quantity tradeQuantity(Quantity incoming_quantity, OrderIterator& it)
+    {
+        Quantity traded = it->tradeQuantity(incoming_quantity);
+        total_quantity -= traded;
+        return traded;
+    }
 };
 
 class OrderBook {
 public:
-    
     using OrdersById = std::unordered_map<OrderId, OrderIterator>;
     template<typename T> using OrderMap = std::map<Price, PriceLevel, T>;
-    using BidMap = OrderMap<std::greater<Price>>; 
+    using BidMap = OrderMap<std::greater<Price>>;
     using AskMap = OrderMap<std::less<Price>>;
 
     OrderBook() = default;
 
     bool add(const Order& order);
     bool cancel(const OrderId id);
-    TradeAccumulator tradeQuantity(const Order& order);
+    TradeAccumulator tradeLimitOrder(const Order& order);
+    TradeAccumulator tradeMarketOrder(Side side, Quantity quantity);
     PriceLevel* getBestBidLevel();
     PriceLevel* getBestAskLevel();
-    
+    PriceLevel* getBestCounterpartyLevel(const Side side);
+
 private:
     PriceLevel& getPriceLevel(const Side side, const Price price);
     template<typename T> PriceLevel& getPriceLevel(std::map<Price, PriceLevel, T>& map, const Price price, const Side side);
     template<typename T> PriceLevel* getBestLevel(std::map<Price, PriceLevel, T>& map);
-    template<typename T> TradeAccumulator trade(std::map<Price, PriceLevel, T>& map, const Order& order); //TODO: heap allocated on every match, pass in pre-allocated output param
-    OrderIterator eraseOrder(std::list<Order>& orders, OrderIterator it);
+    template<typename T, typename MatchFn> TradeAccumulator trade(std::map<Price, PriceLevel, T>& map, Quantity qty, MatchFn isMatch);
+    OrderIterator eraseOrder(PriceLevel& price_level, OrderIterator& it);
+    Quantity tradeLevelQuantity(PriceLevel& price_level, Quantity quantity);
     BidMap bid_map;
     AskMap ask_map;
     OrdersById orders_by_id;

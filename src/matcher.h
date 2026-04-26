@@ -32,4 +32,4 @@ using LimitOrderResult = std::variant<Filled, PartiallyFilled, OpenResult>;
 using MarketOrderResult = std::variant<Filled, PartiallyFilled, NoLiquidityResult>;
 
 LimitOrderResult limitOrder(OrderBook& order_book, const Order& order);
-MarketOrderResult marketOrder(OrderBook& order_book, const OrderId id, const Side side, const Quantity quantity);
+MarketOrderResult marketOrder(OrderBook& order_book, Side side, Quantity quantity);

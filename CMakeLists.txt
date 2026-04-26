@@ -11,7 +11,7 @@ if(DEFINED VCPKG_TARGET_TRIPLET)
 endif()
 
 # --- Core library (shared by server, tests, and benchmarks) ---
-add_library(order_book_lib STATIC src/order_book.cpp)
+add_library(order_book_lib STATIC src/order_book.cpp src/matcher.cpp)
 target_include_directories(order_book_lib PUBLIC src)
 
 if(MSVC)
@@ -40,7 +40,7 @@ find_package(GTest CONFIG REQUIRED)
 
 enable_testing()
 
-add_executable(order_book_tests tests/unit/test_order_book.cpp)
+add_executable(order_book_tests tests/unit/test_order_book.cpp tests/unit/test_matcher.cpp)
 target_link_libraries(order_book_tests PRIVATE order_book_lib GTest::gtest GTest::gtest_main)
 
 if(MSVC)
@@ -55,7 +55,7 @@ gtest_discover_tests(order_book_tests)
 # --- Benchmarks ---
 find_package(benchmark CONFIG REQUIRED)
 
-add_executable(order_book_bench tests/bench/bench_order_book.cpp)
+add_executable(order_book_bench tests/bench/bench_order_book.cpp tests/bench/bench_matchers.cpp)
 target_link_libraries(order_book_bench PRIVATE order_book_lib benchmark::benchmark benchmark::benchmark_main)
 
 if(MSVC)

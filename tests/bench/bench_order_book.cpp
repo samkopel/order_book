@@ -63,7 +63,7 @@ static void BM_TradePartialFill(benchmark::State& state) {
     OrderBook ob;
     ob.add({1, 100, std::numeric_limits<Quantity>::max() / 2, Side::ASK});
     for (auto _ : state) {
-        benchmark::DoNotOptimize(ob.tradeQuantity({0, 100, 10, Side::BID}));
+        benchmark::DoNotOptimize(ob.tradeLimitOrder({0, 100, 10, Side::BID}));
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -82,7 +82,7 @@ static void BM_TradeSweep(benchmark::State& state) {
             ob.add({i, 100 + i, 10, Side::ASK});
         state.ResumeTiming();
         benchmark::DoNotOptimize(
-            ob.tradeQuantity({N, 100 + N, static_cast<Quantity>(10 * N), Side::BID})
+            ob.tradeLimitOrder({N, 100 + N, static_cast<Quantity>(10 * N), Side::BID})
         );
     }
     state.SetItemsProcessed(state.iterations() * N);
@@ -103,7 +103,7 @@ static void BM_Mixed(benchmark::State& state) {
     for (auto _ : state) {
         ob.add({next_ask, 100 + (next_ask % 10), 1'000'000, Side::ASK});
         // market buy sweeps the best ask level partially
-        benchmark::DoNotOptimize(ob.tradeQuantity({0, 100, 5, Side::BID}));
+        benchmark::DoNotOptimize(ob.tradeLimitOrder({0, 100, 5, Side::BID}));
         // cancel the ask we just added so the book stays bounded
         ob.cancel(next_ask);
         ++next_ask;

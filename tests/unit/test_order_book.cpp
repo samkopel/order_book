@@ -26,7 +26,7 @@ TEST(Order, TradeQuantityFull) {
 TEST(Order, TradeQuantityPartial) {
     Order o = makeOrder(1, 100, 10, Side::BID);
     EXPECT_EQ(o.tradeQuantity(3), 3u);
-    EXPECT_EQ(o.remaining_quantity, 7u);
+    EXPECT_EQ(o.quantity, 7u);
 }
 
 TEST(Order, TradeQuantityExceedsRemaining) {
@@ -37,18 +37,18 @@ TEST(Order, TradeQuantityExceedsRemaining) {
 
 // ---- PriceLevel ----
 
-TEST(PriceLevel, IsMatchBid) {
-    PriceLevel level(Side::BID, 100);
-    EXPECT_TRUE(level.isMatch(100));
-    EXPECT_TRUE(level.isMatch(99));
-    EXPECT_FALSE(level.isMatch(101));
+TEST(Order, IsMatchAskAgainstBidLevel) {
+    // an incoming ask matches a bid level when level_price >= ask price
+    EXPECT_TRUE(makeOrder(1, 100, 1, Side::ASK).isMatch(100));
+    EXPECT_TRUE(makeOrder(1, 99,  1, Side::ASK).isMatch(100));
+    EXPECT_FALSE(makeOrder(1, 101, 1, Side::ASK).isMatch(100));
 }
 
-TEST(PriceLevel, IsMatchAsk) {
-    PriceLevel level(Side::ASK, 100);
-    EXPECT_TRUE(level.isMatch(100));
-    EXPECT_TRUE(level.isMatch(101));
-    EXPECT_FALSE(level.isMatch(99));
+TEST(Order, IsMatchBidAgainstAskLevel) {
+    // an incoming bid matches an ask level when bid price >= level_price
+    EXPECT_TRUE(makeOrder(1, 100, 1, Side::BID).isMatch(100));
+    EXPECT_TRUE(makeOrder(1, 101, 1, Side::BID).isMatch(100));
+    EXPECT_FALSE(makeOrder(1, 99,  1, Side::BID).isMatch(100));
 }
 
 TEST(PriceLevel, AddOrderAccumulatesQuantity) {
@@ -166,24 +166,24 @@ TEST(OrderBookBest, EmptyBookReturnsNull) {
     EXPECT_EQ(ob.getBestAskLevel(), nullptr);
 }
 
-// ---- OrderBook::tradeQuantity ----
+// ---- OrderBook::tradeLimitOrder ----
 
 TEST(OrderBookTrade, NoMatchEmptyBook) {
     OrderBook ob;
-    EXPECT_TRUE(ob.tradeQuantity(makeOrder(1, 100, 10, Side::BID)).trades.empty());
+    EXPECT_TRUE(ob.tradeLimitOrder(makeOrder(1, 100, 10, Side::BID)).trades.empty());
 }
 
 TEST(OrderBookTrade, NoMatchPriceMismatch) {
     OrderBook ob;
     ob.add(makeOrder(1, 105, 10, Side::ASK));
     // buyer willing to pay 100 but ask is 105
-    EXPECT_TRUE(ob.tradeQuantity(makeOrder(2, 100, 10, Side::BID)).trades.empty());
+    EXPECT_TRUE(ob.tradeLimitOrder(makeOrder(2, 100, 10, Side::BID)).trades.empty());
 }
 
 TEST(OrderBookTrade, FullFillSingleAsk) {
     OrderBook ob;
     ob.add(makeOrder(1, 100, 10, Side::ASK));
-    auto result = ob.tradeQuantity(makeOrder(2, 100, 10, Side::BID));
+    auto result = ob.tradeLimitOrder(makeOrder(2, 100, 10, Side::BID));
     ASSERT_EQ(result.trades.size(), 1u);
     EXPECT_EQ(result.trades[0].quantity, 10u);
     EXPECT_EQ(result.trades[0].price, 100);
@@ -194,7 +194,7 @@ TEST(OrderBookTrade, FullFillSingleAsk) {
 TEST(OrderBookTrade, PartialFillLeavesResidual) {
     OrderBook ob;
     ob.add(makeOrder(1, 100, 20, Side::ASK));
-    auto result = ob.tradeQuantity(makeOrder(2, 100, 10, Side::BID));
+    auto result = ob.tradeLimitOrder(makeOrder(2, 100, 10, Side::BID));
     ASSERT_EQ(result.trades.size(), 1u);
     EXPECT_EQ(result.trades[0].quantity, 10u);
     ASSERT_NE(ob.getBestAskLevel(), nullptr);
@@ -204,7 +204,7 @@ TEST(OrderBookTrade, PartialFillLeavesResidual) {
 TEST(OrderBookTrade, BuyerPriceAboveAskExecutesAtAskPrice) {
     OrderBook ob;
     ob.add(makeOrder(1, 100, 10, Side::ASK));
-    auto result = ob.tradeQuantity(makeOrder(2, 110, 10, Side::BID));
+    auto result = ob.tradeLimitOrder(makeOrder(2, 110, 10, Side::BID));
     ASSERT_EQ(result.trades.size(), 1u);
     EXPECT_EQ(result.trades[0].price, 100);   // executes at resting ask price
     EXPECT_EQ(result.trades[0].quantity, 10u);
@@ -213,7 +213,7 @@ TEST(OrderBookTrade, BuyerPriceAboveAskExecutesAtAskPrice) {
 TEST(OrderBookTrade, SellMatchesBid) {
     OrderBook ob;
     ob.add(makeOrder(1, 100, 10, Side::BID));
-    auto result = ob.tradeQuantity(makeOrder(2, 100, 10, Side::ASK));
+    auto result = ob.tradeLimitOrder(makeOrder(2, 100, 10, Side::ASK));
     ASSERT_EQ(result.trades.size(), 1u);
     EXPECT_EQ(result.trades[0].quantity, 10u);
     EXPECT_EQ(ob.getBestBidLevel(), nullptr);
@@ -222,7 +222,7 @@ TEST(OrderBookTrade, SellMatchesBid) {
 TEST(OrderBookTrade, SellerPriceBelowBidExecutesAtBidPrice) {
     OrderBook ob;
     ob.add(makeOrder(1, 100, 10, Side::BID));
-    auto result = ob.tradeQuantity(makeOrder(2, 90, 10, Side::ASK));
+    auto result = ob.tradeLimitOrder(makeOrder(2, 90, 10, Side::ASK));
     ASSERT_EQ(result.trades.size(), 1u);
     EXPECT_EQ(result.trades[0].price, 100);   // executes at resting bid price
 }
@@ -231,7 +231,7 @@ TEST(OrderBookTrade, SweepsMultiplePriceLevels) {
     OrderBook ob;
     ob.add(makeOrder(1, 100, 5, Side::ASK));
     ob.add(makeOrder(2, 101, 5, Side::ASK));
-    auto result = ob.tradeQuantity(makeOrder(3, 105, 10, Side::BID));
+    auto result = ob.tradeLimitOrder(makeOrder(3, 105, 10, Side::BID));
     ASSERT_EQ(result.trades.size(), 2u);
     EXPECT_EQ(result.trades[0].price, 100);
     EXPECT_EQ(result.trades[0].quantity, 5u);
@@ -245,7 +245,7 @@ TEST(OrderBookTrade, DoesNotMatchBeyondIncomingPrice) {
     OrderBook ob;
     ob.add(makeOrder(1, 100, 10, Side::ASK));
     ob.add(makeOrder(2, 110, 10, Side::ASK));
-    auto result = ob.tradeQuantity(makeOrder(3, 100, 20, Side::BID));
+    auto result = ob.tradeLimitOrder(makeOrder(3, 100, 20, Side::BID));
     EXPECT_EQ(result.total_executed, 10u);           // only matched the 100 level
     EXPECT_EQ(ob.getBestAskLevel()->price, 110);     // 110 level untouched
 }
@@ -254,7 +254,7 @@ TEST(OrderBookTrade, FIFOOrderingWithinPriceLevel) {
     OrderBook ob;
     ob.add(makeOrder(1, 100, 5, Side::ASK));  // arrives first
     ob.add(makeOrder(2, 100, 5, Side::ASK));  // arrives second
-    ob.tradeQuantity(makeOrder(3, 100, 5, Side::BID));  // buy 5 — should fill order 1
+    ob.tradeLimitOrder(makeOrder(3, 100, 5, Side::BID));  // buy 5 — should fill order 1
     EXPECT_FALSE(ob.cancel(1));  // order 1 was filled and removed
     EXPECT_TRUE(ob.cancel(2));   // order 2 is still resting
 }
@@ -263,7 +263,7 @@ TEST(OrderBookTrade, MultipleOrdersAtSameLevelPartialSweep) {
     OrderBook ob;
     ob.add(makeOrder(1, 100, 5, Side::ASK));
     ob.add(makeOrder(2, 100, 5, Side::ASK));
-    auto result = ob.tradeQuantity(makeOrder(3, 100, 8, Side::BID));
+    auto result = ob.tradeLimitOrder(makeOrder(3, 100, 8, Side::BID));
     EXPECT_EQ(result.total_executed, 8u);
     // 2 units remain at price 100
     ASSERT_NE(ob.getBestAskLevel(), nullptr);
@@ -273,6 +273,6 @@ TEST(OrderBookTrade, MultipleOrdersAtSameLevelPartialSweep) {
 TEST(OrderBookTrade, FilledOrdersRemovedFromCancelIndex) {
     OrderBook ob;
     ob.add(makeOrder(1, 100, 10, Side::ASK));
-    ob.tradeQuantity(makeOrder(2, 100, 10, Side::BID));
+    ob.tradeLimitOrder(makeOrder(2, 100, 10, Side::BID));
     EXPECT_FALSE(ob.cancel(1));  // fully filled, not in the book anymore
 }
