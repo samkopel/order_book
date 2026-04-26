@@ -114,17 +114,9 @@ struct PriceLevel {
     }
 };
 
-struct OrderRecord {
-    PriceLevel* price_level;
-    OrderIterator order_it;
-    
-    OrderRecord(PriceLevel* price_level, const OrderIterator& order_it):
-        price_level(price_level), order_it(order_it) {};
-};
-
 class OrderBook {
 public:
-    using OrdersById = std::unordered_map<OrderId, OrderRecord>;
+    using OrdersById = std::unordered_map<OrderId, OrderIterator>;
     template<typename T> using OrderMap = std::map<Price, PriceLevel, T>;
     using BidMap = OrderMap<std::greater<Price>>;
     using AskMap = OrderMap<std::less<Price>>;
