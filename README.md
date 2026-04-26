@@ -130,12 +130,11 @@ Cancel is the slowest path — currently does an `orders_by_id` lookup followed 
 - Order timestamps for audit/replay
 - Cancel optimization: store price-level pointer in the id index to skip the second lookup
 - Hot array for price ticks near the current SOD price (avoid map overhead in the dense region)
-- Pre-allocated `TradeAccumulator` to avoid per-match heap allocation
 
 ### Order types
 - Good-til-cancelled / expiring orders
 - All-or-nothing
-- Stop-limit (under investigation)
+- Stop-limit (needs analysis)
 
 ### API
 - HTTP layer for add / cancel / order-book summary
