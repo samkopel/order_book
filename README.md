@@ -98,30 +98,42 @@ Coverage spans `Order` and `PriceLevel` invariants, `OrderBook` add/cancel/match
 
 ## Benchmarks
 
-Built with Google Benchmark. Measures the hot paths individually:
-
-- `BM_Add` — add into a warm book (~200 levels)
-- `BM_Cancel` — cancel from a warm book
-- `BM_TradePartialFill` — pure matching cost per trade
-- `BM_TradeSweep` — matching cost as a function of levels touched (1, 10, 100, 1000)
-- `BM_Mixed` — interleaved add + trade
+Built with Google Benchmark. Two suites: `bench_order_book.cpp` measures `OrderBook` directly; `bench_matchers.cpp` measures the public matcher entry points (`limitOrder` / `marketOrder`) so the variant construction and re-insert costs are visible.
 
 ```bash
 ./build/order_book_bench
+./build/order_book_bench --benchmark_filter="LimitOrder|MarketOrder"
 ```
 
-### First-pass results
+### Engine layer (`OrderBook`)
 
-| Operation                          | Avg time per op |
-|------------------------------------|-----------------|
-| Trade (partial fill)               | 31.6 ns         |
-| Mixed (add + trade + cancel)       | 30.0 ns         |
-| Add (batch, amortized)             | 69–80 ns        |
-| Add (single)                       | 103 ns          |
-| Cancel                             | 144–159 ns      |
-| Trade sweep (per level, amortized) | 42–59 ns        |
+| Operation                            | Time per op  |
+|--------------------------------------|--------------|
+| Trade (partial fill, no resize)      | 24.9 ns      |
+| Mixed (add + trade + cancel)         | 61.0 ns      |
+| Add (batch, amortized over 1k–100k)  | 57–69 ns     |
+| Add (single, into warm book)         | 79.5 ns      |
+| Cancel (from warm book)              | 169 ns       |
+| Trade sweep (1 / 10 / 100 / 1000 levels) | 190 / 600 / 4 240 / 43 000 ns |
 
-Cancel is the slowest path — currently does an `orders_by_id` lookup followed by a `getPriceLevel` lookup to find the price level. Storing the price-level pointer alongside the order iterator in `orders_by_id` would collapse this to a single hop (see roadmap).
+### Matcher layer (`limitOrder` / `marketOrder`)
+
+| Operation                       | Time per op | Note |
+|---------------------------------|-------------|------|
+| `marketOrder` — no liquidity    | 1.15 ns     | empty-book detect + variant ctor — the floor |
+| `marketOrder` — full fill       | 33.0 ns     | matcher adds ~8 ns over `tradeQuantity` direct |
+| `limitOrder` — full fill        | 33.7 ns     | parallel to market full fill — lambda inlines cleanly |
+| `limitOrder` — open             | 81.0 ns     | dominated by `add`, as expected |
+| `limitOrder` — partial fill     | 349 ns      | includes residual cleanup; effective cost ≈ 180 ns |
+| `marketOrder` — sweep (1 / 10 / 100 / 1000) | 186 / 579 / 4 239 / 42 542 ns | tracks engine sweep almost exactly — variant cost amortizes away |
+
+### Observations
+
+- **The lambda predicate works.** `limitOrder` full-fill (33.7 ns) and `marketOrder` full-fill (33.0 ns) sit within noise of each other. The compile-time dispatch via the match lambda is paying off — there's no measurable overhead from going through the `Order::isMatch` path vs. the `[](Price){ return true; }` path.
+- **Matcher overhead is ~8 ns.** Direct `tradeLimitOrder` is 24.9 ns; matcher full-fill is 33.7 ns. That ~8 ns is the variant construction and the best-level pre-check.
+- **Cancel is still the slowest single-order path** at 169 ns. Currently does `orders_by_id` lookup → `getPriceLevel` lookup → erase from list + map. Storing the price-level pointer alongside the iterator in `orders_by_id` would collapse this to one hop (see roadmap).
+- **Sweeps amortize cleanly to ~43 ns/level at 1000 levels** — that's the per-level work (map iteration, level erase, trade record).
+- **Partial-fill matcher number is misleading.** `BM_LimitOrder_PartialFill` cancels the residual every iteration as cleanup, so it bakes in the 169 ns cancel cost. The actual partial-fill matcher cost is closer to 180 ns. Worth replacing the cleanup with a different strategy (e.g. burst then reset book) for a cleaner number.
 
 ## Roadmap
 
