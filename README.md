@@ -102,14 +102,14 @@ Built with Google Benchmark. Run: `./build/order_book_bench`.
 
 ![Performance results](images/performance%20results.jpg)
 
-Cancel is the slowest single-order path — two lookups (`orders_by_id` then `getPriceLevel`) where one would do. Storing the price-level pointer alongside the iterator collapses it to one hop (see roadmap).
+Cancel is the slowest single-order path. This needs analysis.
 
 ## Roadmap
 
 ### Engine
 - Modify order (in-place replace, avoiding cancel + add round-trip)
 - Order timestamps for audit/replay
-- Cancel optimization: store price-level pointer in the id index to skip the second lookup
+- Cancel optimization (needs analysis).
 - Hot array for price ticks near the current SOD price (avoid map overhead in the dense region)
 
 ### Order types
