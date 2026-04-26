@@ -4,7 +4,9 @@ bool OrderBook::add(const Order& order)
 {
     if (orders_by_id.find(order.id) != orders_by_id.end()) return false;
     auto& price_level = getPriceLevel(order.side, order.price);
-    orders_by_id[order.id] = price_level.addOrder(order);
+    auto order_it = price_level.addOrder(order);
+    OrderRecord order_record = OrderRecord(&price_level, order_it);
+    orders_by_id.try_emplace(order.id, order_record);
     return true;
 }
 
@@ -13,18 +15,18 @@ bool OrderBook::cancel(const OrderId id)
     const auto map_it = orders_by_id.find(id);
     if (map_it == orders_by_id.end()) return false;
 
-    OrderIterator& order_it = map_it->second;
-    const Side side  = order_it->side;  
-    const Price price = order_it->price;
+    PriceLevel& price_level = *map_it->second.price_level;
+    const Side side  = price_level.side;
+    const Price price = price_level.price;
 
-    PriceLevel& price_level = getPriceLevel(side, price);
-    eraseOrder(price_level, order_it);
+    price_level.removeOrder(map_it->second.order_it);
+    orders_by_id.erase(map_it);
 
     if (price_level.isEmpty())
     {
-        if (side == Side::BID) 
+        if (side == Side::BID)
             bid_map.erase(price);
-        else 
+        else
             ask_map.erase(price);
     }
     return true;
