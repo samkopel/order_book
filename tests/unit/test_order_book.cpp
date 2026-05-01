@@ -1,8 +1,9 @@
 #include <gtest/gtest.h>
 #include "order_book.h"
 
-static Order makeOrder(OrderId id, Price price, Quantity qty, Side side) {
-    return Order{id, price, qty, side};
+static Order makeOrder(OrderId id, Price price, Quantity qty, Side side,
+                       OrderType order_type = OrderType::GoodTillCancel) {
+    return Order{id, price, qty, side, order_type};
 }
 
 // ---- Order ----
@@ -167,6 +168,7 @@ TEST(OrderBookBest, EmptyBookReturnsNull) {
 }
 
 // ---- OrderBook::tradeLimitOrder ----
+// These tests exercise the trade-only primitive (no residual placement).
 
 TEST(OrderBookTrade, NoMatchEmptyBook) {
     OrderBook ob;

@@ -11,7 +11,7 @@ if(DEFINED VCPKG_TARGET_TRIPLET)
 endif()
 
 # --- Core library (shared by server, tests, and benchmarks) ---
-add_library(order_book_lib STATIC src/order_book.cpp src/matcher.cpp)
+add_library(order_book_lib STATIC src/order_book.cpp)
 target_include_directories(order_book_lib PUBLIC src)
 
 if(MSVC)

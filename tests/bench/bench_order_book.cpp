@@ -23,7 +23,7 @@ static void BM_AddBatch(benchmark::State& state) {
     std::vector<Order> orders;
     orders.reserve(N);
     for (int i = 0; i < N; ++i)
-        orders.push_back({i, (i % 200) + 100, 10, Side::BID});
+        orders.push_back({i, (i % 200) + 100, 10, Side::BID, OrderType::GoodTillCancel});
 
     for (auto _ : state) {
         state.PauseTiming();
