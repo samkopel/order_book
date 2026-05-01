@@ -4,10 +4,12 @@
 
 using json = nlohmann::json;
 
-int main() {
+int main() 
+{
     httplib::Server server;
 
-    server.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
+    server.Get("/api/health", [](const httplib::Request&, httplib::Response& res) 
+    {
         json body = {
             {"status", "ok"},
             {"service", "order-books"}

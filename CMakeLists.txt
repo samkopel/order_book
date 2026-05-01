@@ -5,14 +5,16 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(Threads REQUIRED)
 
 if(DEFINED VCPKG_TARGET_TRIPLET)
     include_directories(${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/include)
 endif()
 
 # --- Core library (shared by server, tests, and benchmarks) ---
-add_library(order_book_lib STATIC src/order_book.cpp src/matcher.cpp)
+add_library(order_book_lib STATIC src/order_book.cpp src/day_order_pruner.cpp)
 target_include_directories(order_book_lib PUBLIC src)
+target_link_libraries(order_book_lib PUBLIC Threads::Threads)
 
 if(MSVC)
     target_compile_options(order_book_lib PRIVATE /W4 /O2)
@@ -40,7 +42,10 @@ find_package(GTest CONFIG REQUIRED)
 
 enable_testing()
 
-add_executable(order_book_tests tests/unit/test_order_book.cpp tests/unit/test_matcher.cpp)
+add_executable(order_book_tests
+    tests/unit/test_order_book.cpp
+    tests/unit/test_matcher.cpp
+    tests/unit/test_pruner.cpp)
 target_link_libraries(order_book_tests PRIVATE order_book_lib GTest::gtest GTest::gtest_main)
 
 if(MSVC)

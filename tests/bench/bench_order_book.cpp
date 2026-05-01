@@ -3,6 +3,22 @@
 #include <limits>
 #include <vector>
 
+static Order makeOrder(OrderId id, Price price, Quantity qty, Side side,
+                       OrderType order_type = OrderType::GoodTillCancel) {
+    return Order{id, price, qty, side, order_type};
+}
+
+// Seed the book with a non-crossing limit order. The book has no public
+// "add" - matchLimitOrder against an empty/non-crossing side has the same
+// effect (the order rests on the book and OpenResult is returned).
+static void seed(OrderBook& ob, OrderId id, Price price, Quantity qty, Side side,
+                 OrderType order_type = OrderType::GoodTillCancel) {
+    ob.matchLimitOrder(makeOrder(id, price, qty, side, order_type));
+}
+
+static void seed(OrderBook& ob, Order& order) {
+    ob.matchLimitOrder(order);
+}
 // ---- Add ----
 
 // Measures the steady-state cost of adding one order to a book with ~200 price levels.
@@ -10,7 +26,7 @@ static void BM_Add(benchmark::State& state) {
     OrderBook ob;
     OrderId id = 0;
     for (auto _ : state) {
-        ob.add({id, (id % 200) + 100, 10, Side::BID});
+        seed(ob, id, (id % 200) + 100, 10, Side::BID);
         ++id;
     }
     state.SetItemsProcessed(state.iterations());
@@ -23,13 +39,13 @@ static void BM_AddBatch(benchmark::State& state) {
     std::vector<Order> orders;
     orders.reserve(N);
     for (int i = 0; i < N; ++i)
-        orders.push_back({i, (i % 200) + 100, 10, Side::BID});
+        orders.push_back({i, (i % 200) + 100, 10, Side::BID, OrderType::GoodTillCancel});
 
     for (auto _ : state) {
         state.PauseTiming();
         OrderBook ob;
         state.ResumeTiming();
-        for (auto& o : orders) ob.add(o);
+        for (auto& o : orders) seed(ob, o);
     }
     state.SetItemsProcessed(state.iterations() * N);
 }
@@ -42,12 +58,12 @@ static void BM_Cancel(benchmark::State& state) {
     const int kWarm = 10000;
     OrderBook ob;
     for (int i = 0; i < kWarm; ++i)
-        ob.add({i, (i % 200) + 100, 10, Side::BID});
+        seed(ob, i, (i % 200) + 100, 10, Side::BID);
 
     OrderId next = kWarm;
     for (auto _ : state) {
         state.PauseTiming();
-        ob.add({next, (next % 200) + 100, 10, Side::BID});
+        seed(ob, next, (next % 200) + 100, 10, Side::BID);
         state.ResumeTiming();
         ob.cancel(next);
         ++next;
@@ -61,9 +77,9 @@ BENCHMARK(BM_Cancel);
 // The resting order is never exhausted; measures pure matching logic per call.
 static void BM_TradePartialFill(benchmark::State& state) {
     OrderBook ob;
-    ob.add({1, 100, std::numeric_limits<Quantity>::max() / 2, Side::ASK});
+    seed(ob, 1, 100, std::numeric_limits<Quantity>::max() / 2, Side::ASK);
     for (auto _ : state) {
-        benchmark::DoNotOptimize(ob.tradeLimitOrder({0, 100, 10, Side::BID}));
+        benchmark::DoNotOptimize(ob.matchLimitOrder({0, 100, 10, Side::BID}));
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -79,10 +95,10 @@ static void BM_TradeSweep(benchmark::State& state) {
         state.PauseTiming();
         OrderBook ob;
         for (int i = 0; i < N; ++i)
-            ob.add({i, 100 + i, 10, Side::ASK});
+            seed(ob, i, 100 + i, 10, Side::ASK);
         state.ResumeTiming();
         benchmark::DoNotOptimize(
-            ob.tradeLimitOrder({N, 100 + N, static_cast<Quantity>(10 * N), Side::BID})
+            ob.matchLimitOrder({N, 100 + N, static_cast<Quantity>(10 * N), Side::BID})
         );
     }
     state.SetItemsProcessed(state.iterations() * N);
@@ -97,13 +113,12 @@ static void BM_Mixed(benchmark::State& state) {
     OrderBook ob;
     // Seed asks at 10 price levels with large quantity so they don't get exhausted.
     for (int i = 0; i < 10; ++i)
-        ob.add({i, 100 + i, 1'000'000, Side::ASK});
-
+        seed(ob, i, 100 + i, 1'000'000, Side::ASK);
     OrderId next_ask = 10;
     for (auto _ : state) {
-        ob.add({next_ask, 100 + (next_ask % 10), 1'000'000, Side::ASK});
+        seed(ob, next_ask, 100 + (next_ask % 10), 1'000'000, Side::ASK);
         // market buy sweeps the best ask level partially
-        benchmark::DoNotOptimize(ob.tradeLimitOrder({0, 100, 5, Side::BID}));
+        benchmark::DoNotOptimize(ob.matchLimitOrder({0, 100, 5, Side::BID}));
         // cancel the ask we just added so the book stays bounded
         ob.cancel(next_ask);
         ++next_ask;

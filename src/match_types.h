@@ -1,7 +1,9 @@
 #pragma once
 #include <cstdint>
 #include <variant>
-#include "order_book.h"
+#include "order.h"
+#include "vector"
+#include "trade.h"
 
 struct Filled {                                                                                                                                            
       Quantity executed_quantity;
@@ -30,6 +32,3 @@ struct NoLiquidityResult {
 
 using LimitOrderResult = std::variant<Filled, PartiallyFilled, OpenResult>;
 using MarketOrderResult = std::variant<Filled, PartiallyFilled, NoLiquidityResult>;
-
-LimitOrderResult limitOrder(OrderBook& order_book, const Order& order);
-MarketOrderResult marketOrder(OrderBook& order_book, Side side, Quantity quantity);

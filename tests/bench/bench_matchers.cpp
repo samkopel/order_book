@@ -1,18 +1,30 @@
 #include <benchmark/benchmark.h>
-#include "matcher.h"
 #include "order_book.h"
 #include <limits>
 
-// ---- limitOrder ----
+static Order makeOrder(OrderId id, Price price, Quantity qty, Side side,
+                       OrderType order_type = OrderType::GoodTillCancel) {
+    return Order{id, price, qty, side, order_type};
+}
+
+// Seed the book with a non-crossing limit order. The book has no public
+// "add" - matchLimitOrder against an empty/non-crossing side has the same
+// effect (the order rests on the book and OpenResult is returned).
+static void seed(OrderBook& ob, OrderId id, Price price, Quantity qty, Side side,
+                 OrderType order_type = OrderType::GoodTillCancel) {
+    ob.matchLimitOrder(makeOrder(id, price, qty, side, order_type));
+}
+
+// ---- matchLimitOrder ----
 
 // No-match path: incoming bid doesn't cross the resting ask, so the order
 // is added to the book and an OpenResult is returned.
 static void BM_LimitOrder_Open(benchmark::State& state) {
     OrderBook ob;
-    ob.add({1, 200, 1'000'000, Side::ASK});  // ask far above any incoming bid
+    seed(ob, 1, 200, 1'000'000, Side::ASK);  // ask far above any incoming bid
     OrderId id = 2;
     for (auto _ : state) {
-        benchmark::DoNotOptimize(limitOrder(ob, {id, 100, 10, Side::BID}));
+        benchmark::DoNotOptimize(ob.matchLimitOrder({id, 100, 10, Side::BID}));
         ++id;
     }
     state.SetItemsProcessed(state.iterations());
@@ -23,10 +35,10 @@ BENCHMARK(BM_LimitOrder_Open);
 // The resting ask has effectively unlimited size so it's never exhausted.
 static void BM_LimitOrder_FullFill(benchmark::State& state) {
     OrderBook ob;
-    ob.add({1, 100, std::numeric_limits<Quantity>::max() / 2, Side::ASK});
+    seed(ob, 1, 100, std::numeric_limits<Quantity>::max() / 2, Side::ASK);
     OrderId id = 2;
     for (auto _ : state) {
-        benchmark::DoNotOptimize(limitOrder(ob, {id, 100, 10, Side::BID}));
+        benchmark::DoNotOptimize(ob.matchLimitOrder({id, 100, 10, Side::BID}));
         ++id;
     }
     state.SetItemsProcessed(state.iterations());
@@ -41,10 +53,10 @@ static void BM_LimitOrder_PartialFill(benchmark::State& state) {
     OrderId incoming_id = 1'000'000;
     for (auto _ : state) {
         state.PauseTiming();
-        ob.add({resting_id++, 100, 5, Side::ASK});
+        seed(ob, resting_id++, 100, 5, Side::ASK);
         state.ResumeTiming();
 
-        benchmark::DoNotOptimize(limitOrder(ob, {incoming_id, 100, 10, Side::BID}));
+        benchmark::DoNotOptimize(ob.matchLimitOrder({incoming_id, 100, 10, Side::BID}));
 
         state.PauseTiming();
         ob.cancel(incoming_id);  // remove the residual so the book stays bounded
@@ -55,14 +67,14 @@ static void BM_LimitOrder_PartialFill(benchmark::State& state) {
 }
 BENCHMARK(BM_LimitOrder_PartialFill);
 
-// ---- marketOrder ----
+// ---- matchMarketOrder ----
 
 // Full-fill path: deep ask, market buy fully consumed.
 static void BM_MarketOrder_FullFill(benchmark::State& state) {
     OrderBook ob;
-    ob.add({1, 100, std::numeric_limits<Quantity>::max() / 2, Side::ASK});
+    seed(ob, 1, 100, std::numeric_limits<Quantity>::max() / 2, Side::ASK);
     for (auto _ : state) {
-        benchmark::DoNotOptimize(marketOrder(ob, Side::BID, 10));
+        benchmark::DoNotOptimize(ob.matchMarketOrder(Side::BID, 10));
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -73,7 +85,7 @@ BENCHMARK(BM_MarketOrder_FullFill);
 static void BM_MarketOrder_NoLiquidity(benchmark::State& state) {
     OrderBook ob;
     for (auto _ : state) {
-        benchmark::DoNotOptimize(marketOrder(ob, Side::BID, 10));
+        benchmark::DoNotOptimize(ob.matchMarketOrder(Side::BID, 10));
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -87,11 +99,11 @@ static void BM_MarketOrder_Sweep(benchmark::State& state) {
         state.PauseTiming();
         OrderBook ob;
         for (int i = 0; i < N; ++i)
-            ob.add({i, 100 + i, 10, Side::ASK});
+            seed(ob, i, 100 + i, 10, Side::ASK);
         state.ResumeTiming();
 
         benchmark::DoNotOptimize(
-            marketOrder(ob, Side::BID, static_cast<Quantity>(10 * N))
+            ob.matchMarketOrder(Side::BID, static_cast<Quantity>(10 * N))
         );
     }
     state.SetItemsProcessed(state.iterations() * N);
